@@ -185,6 +185,8 @@ export function CharacterProvider({ children }) {
     }
   };
 
+  const [roomCharactersList, setRoomCharactersList] = useState([]);
+
   // Unirse y cargar una sala existente
   const joinCloudRoom = async (codeToJoin) => {
     const code = normalizeRoomCode(codeToJoin);
@@ -193,22 +195,95 @@ export function CharacterProvider({ children }) {
     setCloudStatus('syncing');
     setCloudError(null);
     try {
-      const loadedChar = await loadRoomFromCloud(code);
-      if (loadedChar && loadedChar.characteristics) {
-        isReceivingRemoteUpdateRef.current = true;
-        setCharacter(loadedChar);
+      const roomData = await loadRoomFromCloud(code);
+      if (roomData && roomData.characters && roomData.characters.length > 0) {
+        setRoomCharactersList(roomData.characters);
         setRoomCode(code);
         setCloudStatus('synced');
         setCloudLastSaved(Date.now());
-        return loadedChar;
+
+        // Seleccionar personaje: intentar mantener el actual si coincide id, o usar el primero
+        const matching = roomData.characters.find(c => c.id === character.id);
+        const charToSelect = matching || roomData.characters[0];
+        if (charToSelect) {
+          isReceivingRemoteUpdateRef.current = true;
+          setCharacter(charToSelect);
+        }
+        return roomData;
       } else {
-        throw new Error('La ficha encontrada no tiene un formato válido.');
+        throw new Error('La sala no contiene personajes.');
       }
     } catch (err) {
       setCloudStatus('error');
       setCloudError(err.message);
       throw err;
     }
+  };
+
+  // Seleccionar un personaje específico dentro de la sala activa
+  const selectCharacterFromRoom = (charId) => {
+    const found = roomCharactersList.find(c => c.id === charId);
+    if (found) {
+      isReceivingRemoteUpdateRef.current = true;
+      setCharacter(found);
+    }
+  };
+
+  // Añadir un nuevo personaje o PNJ a la sala activa
+  const addCharacterToRoom = async (newCharData) => {
+    const charId = newCharData.id || `char-${Date.now()}`;
+    const formatted = { ...newCharData, id: charId };
+
+    setRoomCharactersList(prev => {
+      const exists = prev.some(c => c.id === charId);
+      if (exists) {
+        return prev.map(c => c.id === charId ? formatted : c);
+      }
+      return [...prev, formatted];
+    });
+
+    if (roomCode) {
+      try {
+        await saveRoomToCloud(roomCode, formatted);
+        setCloudStatus('synced');
+        setCloudLastSaved(Date.now());
+      } catch (err) {
+        console.error('Error saving new character to cloud room:', err);
+      }
+    }
+
+    return formatted;
+  };
+
+  // Importar un PNJ predefinido (ej. de La Muerte sobre el Reik) como ficha activa
+  const importNPCToActiveSheet = async (npcData) => {
+    const newNpcId = `npc-${Date.now()}`;
+    const fullCharSheet = {
+      ...DEFAULT_CHARACTER,
+      id: newNpcId,
+      name: npcData.name,
+      species: npcData.species || 'Humano',
+      career: npcData.career || 'PNJ',
+      status: npcData.status || 'Plata 1',
+      wounds: npcData.wounds || { current: 14, overrideMax: 14, hardyBonus: 0 },
+      characteristics: npcData.characteristics || DEFAULT_CHARACTER.characteristics,
+      skills: npcData.skills ? [...npcData.skills] : DEFAULT_CHARACTER.skills,
+      talents: npcData.talents ? [...npcData.talents] : [],
+      weapons: npcData.weapons ? [...npcData.weapons] : [],
+      armor: npcData.armor || DEFAULT_CHARACTER.armor,
+      notes: {
+        background: npcData.description || '',
+        allies: npcData.role || '',
+        enemies: npcData.categoryLabel || '',
+        journal: npcData.notes || ''
+      },
+      traits: npcData.traits || [],
+      isNPC: true
+    };
+
+    setCharacter(fullCharSheet);
+    await addCharacterToRoom(fullCharSheet);
+    return fullCharSheet;
   };
 
   // Forzar guardado inmediato en la nube
@@ -220,6 +295,16 @@ export function CharacterProvider({ children }) {
       await saveRoomToCloud(roomCode, character);
       setCloudStatus('synced');
       setCloudLastSaved(Date.now());
+      // Actualizar en la lista local de la sala
+      setRoomCharactersList(prev => {
+        const index = prev.findIndex(c => c.id === character.id);
+        if (index >= 0) {
+          const cp = [...prev];
+          cp[index] = character;
+          return cp;
+        }
+        return [...prev, character];
+      });
     } catch (err) {
       setCloudStatus('error');
       setCloudError(err.message);
@@ -230,6 +315,7 @@ export function CharacterProvider({ children }) {
   // Desconectar de la sala actual
   const disconnectCloudRoom = () => {
     setRoomCode('');
+    setRoomCharactersList([]);
     setCloudStatus('idle');
     setCloudError(null);
   };
@@ -467,8 +553,12 @@ export function CharacterProvider({ children }) {
       closeDiceModal,
       rollHistory,
       clearRollHistory: () => setRollHistory([]),
-      // Propiedades de la Nube (Cloud Room)
+      // Propiedades de la Nube (Cloud Room Multi-Personaje)
       roomCode,
+      roomCharactersList,
+      selectCharacterFromRoom,
+      addCharacterToRoom,
+      importNPCToActiveSheet,
       cloudStatus,
       cloudError,
       cloudLastSaved,

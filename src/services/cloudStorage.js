@@ -1,10 +1,10 @@
-import { doc, setDoc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, updateDoc, deleteField, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { getFirebaseDb } from './firebase';
 
 const COLLECTION_NAME = 'wfrp4e_rooms';
 
 /**
- * Genera un código de sala corto y legible (ej: WFRP-7K9A)
+ * Genera un código de sala corto y legible (ej: REIK-7K9A o WFRP-7K9A)
  */
 export const generateRoomCode = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -12,7 +12,7 @@ export const generateRoomCode = () => {
   for (let i = 0; i < 4; i++) {
     randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return `WFRP-${randomPart}`;
+  return `REIK-${randomPart}`;
 };
 
 /**
@@ -24,7 +24,7 @@ export const normalizeRoomCode = (code) => {
 };
 
 /**
- * Guarda una ficha de personaje en la nube bajo el código de sala especificado
+ * Guarda una ficha de personaje en una sala de campaña (soporta N personajes en la misma sala)
  */
 export const saveRoomToCloud = async (roomCode, characterData) => {
   const db = getFirebaseDb();
@@ -37,12 +37,30 @@ export const saveRoomToCloud = async (roomCode, characterData) => {
     throw new Error('Código de sala no válido.');
   }
 
+  const charId = characterData.id || `char-${Date.now()}`;
+  const charWithId = { ...characterData, id: charId };
+
   const roomRef = doc(db, COLLECTION_NAME, cleanCode);
+  const snap = await getDoc(roomRef);
+
+  let existingCharacters = {};
+  if (snap.exists()) {
+    const data = snap.data();
+    if (data.characters) {
+      existingCharacters = { ...data.characters };
+    } else if (data.character) {
+      existingCharacters[data.character.id || 'char-default'] = data.character;
+    }
+  }
+
+  existingCharacters[charId] = charWithId;
+
   const payload = {
-    character: characterData,
-    updatedAt: serverTimestamp(),
     roomCode: cleanCode,
-    version: '1.0.0'
+    updatedAt: serverTimestamp(),
+    characters: existingCharacters,
+    character: charWithId, // Compatibilidad hacia atrás
+    version: '2.0.0'
   };
 
   await setDoc(roomRef, payload, { merge: true });
@@ -50,7 +68,7 @@ export const saveRoomToCloud = async (roomCode, characterData) => {
 };
 
 /**
- * Carga los datos de una sala desde la nube
+ * Carga todos los personajes de una sala de campaña
  */
 export const loadRoomFromCloud = async (roomCode) => {
   const db = getFirebaseDb();
@@ -67,11 +85,39 @@ export const loadRoomFromCloud = async (roomCode) => {
   const snap = await getDoc(roomRef);
 
   if (!snap.exists()) {
-    throw new Error(`No se encontró ninguna ficha con el código de sala "${cleanCode}".`);
+    throw new Error(`No se encontró ninguna sala de campaña con el código "${cleanCode}".`);
   }
 
   const data = snap.data();
-  return data.character;
+  let charactersList = [];
+
+  if (data.characters && Object.keys(data.characters).length > 0) {
+    charactersList = Object.values(data.characters);
+  } else if (data.character) {
+    charactersList = [data.character];
+  }
+
+  return {
+    roomCode: cleanCode,
+    characters: charactersList,
+    primaryCharacter: charactersList[0] || null
+  };
+};
+
+/**
+ * Elimina una ficha de una sala en la nube
+ */
+export const deleteCharacterFromCloudRoom = async (roomCode, characterId) => {
+  const db = getFirebaseDb();
+  if (!db) return;
+
+  const cleanCode = normalizeRoomCode(roomCode);
+  const roomRef = doc(db, COLLECTION_NAME, cleanCode);
+
+  await updateDoc(roomRef, {
+    [`characters.${characterId}`]: deleteField(),
+    updatedAt: serverTimestamp()
+  });
 };
 
 /**
@@ -92,9 +138,18 @@ export const subscribeToRoom = (roomCode, onDataChange, onError) => {
     (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data && data.character) {
-          onDataChange(data.character);
+        let charactersList = [];
+        if (data.characters && Object.keys(data.characters).length > 0) {
+          charactersList = Object.values(data.characters);
+        } else if (data.character) {
+          charactersList = [data.character];
         }
+
+        onDataChange({
+          roomCode: cleanCode,
+          characters: charactersList,
+          character: charactersList[0] || null
+        });
       }
     },
     (err) => {

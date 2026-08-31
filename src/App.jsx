@@ -10,10 +10,11 @@ import MagicSpells from './components/MagicSpells';
 import Inventory from './components/Inventory';
 import NotesBio from './components/NotesBio';
 import DiceModal from './components/DiceModal';
-import { Shield, Swords, Package, BookOpen, Layers } from 'lucide-react';
+import MasterScreen from './components/MasterScreen';
+import { Shield, Swords, Package, BookOpen, Layers, Crown } from 'lucide-react';
 
 function CharacterSheetApp() {
-  const [activeTab, setActiveTab] = useState('main'); // 'main' | 'combat_gear' | 'talents_bio' | 'all'
+  const [activeTab, setActiveTab] = useState('main'); // 'main' | 'combat_gear' | 'talents_bio' | 'gm_screen' | 'all'
 
   return (
     <div className="min-h-screen bg-grim-950 text-parchment-200 p-3 sm:p-6 md:p-8 max-w-7xl mx-auto selection:bg-imperial-gold selection:text-grim-950">
@@ -31,7 +32,7 @@ function CharacterSheetApp() {
               : 'text-parchment-400 hover:text-parchment-200 hover:bg-grim-900/40'
           }`}
         >
-          <Shield size={14} /> Ficha Principal (Stats, Habilidades & Combate)
+          <Shield size={14} /> Ficha Principal
         </button>
 
         <button
@@ -43,7 +44,7 @@ function CharacterSheetApp() {
               : 'text-parchment-400 hover:text-parchment-200 hover:bg-grim-900/40'
           }`}
         >
-          <Package size={14} /> Equipo, Inventario & Magia
+          <Package size={14} /> Equipo & Magia
         </button>
 
         <button
@@ -55,7 +56,19 @@ function CharacterSheetApp() {
               : 'text-parchment-400 hover:text-parchment-200 hover:bg-grim-900/40'
           }`}
         >
-          <BookOpen size={14} /> Talentos & Crónicas de Campaña
+          <BookOpen size={14} /> Talentos & Crónicas
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('gm_screen')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg font-subheading text-xs uppercase tracking-wider font-bold transition-all ${
+            activeTab === 'gm_screen'
+              ? 'bg-amber-950/90 text-amber-300 border-t-2 border-x border-amber-500 shadow-gold-glow font-black'
+              : 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-950/30'
+          }`}
+        >
+          <Crown size={14} className="text-amber-400" /> 👑 Panel del Máster (La Muerte sobre el Reik)
         </button>
 
         <button
@@ -73,45 +86,52 @@ function CharacterSheetApp() {
 
       {/* Contenido según pestaña */}
       <main className="space-y-6">
-        {/* El Encabezado de Identidad se muestra en todas las vistas */}
-        <Header />
-
-        {/* Vista 1: Principal */}
-        {activeTab === 'main' && (
+        {/* En vista de Máster mostramos la pantalla de Máster directamente */}
+        {activeTab === 'gm_screen' ? (
+          <MasterScreen />
+        ) : (
           <>
-            <Characteristics />
-            <Combat />
-            <Skills />
-          </>
-        )}
+            {/* El Encabezado de Identidad se muestra en todas las vistas de personaje */}
+            <Header />
 
-        {/* Vista 2: Equipo & Magia */}
-        {activeTab === 'combat_gear' && (
-          <>
-            <Combat />
-            <Inventory />
-            <MagicSpells />
-          </>
-        )}
+            {/* Vista 1: Principal */}
+            {activeTab === 'main' && (
+              <>
+                <Characteristics />
+                <Combat />
+                <Skills />
+              </>
+            )}
 
-        {/* Vista 3: Talentos & Trasfondo */}
-        {activeTab === 'talents_bio' && (
-          <>
-            <Talents />
-            <NotesBio />
-          </>
-        )}
+            {/* Vista 2: Equipo & Magia */}
+            {activeTab === 'combat_gear' && (
+              <>
+                <Combat />
+                <Inventory />
+                <MagicSpells />
+              </>
+            )}
 
-        {/* Vista 4: Completa */}
-        {activeTab === 'all' && (
-          <>
-            <Characteristics />
-            <Combat />
-            <Skills />
-            <Talents />
-            <MagicSpells />
-            <Inventory />
-            <NotesBio />
+            {/* Vista 3: Talentos & Trasfondo */}
+            {activeTab === 'talents_bio' && (
+              <>
+                <Talents />
+                <NotesBio />
+              </>
+            )}
+
+            {/* Vista 4: Completa */}
+            {activeTab === 'all' && (
+              <>
+                <Characteristics />
+                <Combat />
+                <Skills />
+                <Talents />
+                <MagicSpells />
+                <Inventory />
+                <NotesBio />
+              </>
+            )}
           </>
         )}
       </main>

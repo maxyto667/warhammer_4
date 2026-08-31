@@ -16,16 +16,22 @@ import {
   Settings, 
   X, 
   AlertCircle, 
-  RefreshCw,
-  LogOut,
-  Sparkles,
-  CheckCircle2
+  RefreshCw, 
+  LogOut, 
+  Sparkles, 
+  CheckCircle2, 
+  Users, 
+  UserCheck, 
+  Heart 
 } from 'lucide-react';
 
 export default function CloudRoomModal({ isOpen, onClose }) {
   const {
     character,
     roomCode,
+    roomCharactersList,
+    selectCharacterFromRoom,
+    addCharacterToRoom,
     cloudStatus,
     cloudError,
     cloudLastSaved,
@@ -76,7 +82,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
     setActionMessage(null);
     try {
       const code = await createCloudRoom(customCodeInput || null);
-      setActionMessage({ type: 'success', text: `¡Sala creada con éxito! Código: ${code}` });
+      setActionMessage({ type: 'success', text: `¡Sala de campaña creada con éxito! Código: ${code}` });
       setActiveTab('status');
       setCustomCodeInput('');
     } catch (err) {
@@ -93,12 +99,27 @@ export default function CloudRoomModal({ isOpen, onClose }) {
     setActionLoading(true);
     setActionMessage(null);
     try {
-      await joinCloudRoom(joinCodeInput);
-      setActionMessage({ type: 'success', text: '¡Ficha cargada y sincronizada correctamente!' });
+      const roomData = await joinCloudRoom(joinCodeInput);
+      setActionMessage({ 
+        type: 'success', 
+        text: `¡Unido a la sala ${roomData.roomCode}! Selecciona tu personaje a continuación.` 
+      });
       setActiveTab('status');
       setJoinCodeInput('');
     } catch (err) {
       setActionMessage({ type: 'error', text: err.message || 'No se pudo cargar la sala.' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleAddCurrentToRoom = async () => {
+    setActionLoading(true);
+    try {
+      await addCharacterToRoom(character);
+      setActionMessage({ type: 'success', text: `¡Ficha de "${character.name}" añadida a la sala!` });
+    } catch (err) {
+      setActionMessage({ type: 'error', text: err.message });
     } finally {
       setActionLoading(false);
     }
@@ -122,7 +143,6 @@ export default function CloudRoomModal({ isOpen, onClose }) {
     try {
       let parsed = null;
       if (firebaseConfigText.trim()) {
-        // Intentar parsear si el usuario pegó el objeto JS o JSON
         let text = firebaseConfigText.trim();
         if (text.startsWith('const firebaseConfig =')) {
           text = text.replace('const firebaseConfig =', '').replace(/;$/, '').trim();
@@ -140,7 +160,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-      <div className="bg-wfrp-parchment border-2 border-wfrp-gold shadow-2xl rounded-xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-wfrp-parchment border-2 border-wfrp-gold shadow-2xl rounded-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
         
         {/* Cabecera del Modal */}
         <div className="bg-wfrp-card-header px-5 py-4 border-b border-wfrp-gold/40 flex items-center justify-between">
@@ -150,10 +170,10 @@ export default function CloudRoomModal({ isOpen, onClose }) {
             </div>
             <div>
               <h2 className="font-wfrp text-xl text-wfrp-light tracking-wide flex items-center gap-2">
-                Persistencia en la Nube
+                Sala de Campaña en la Nube
               </h2>
               <p className="text-xs text-wfrp-light/60">
-                Guarda y recupera tus personajes desde cualquier dispositivo con un código único
+                Comparte una misma sala con tu grupo de rol y accede a todos los personajes
               </p>
             </div>
           </div>
@@ -176,7 +196,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                   : 'text-wfrp-light/70 hover:text-wfrp-light hover:bg-white/5'
               }`}
             >
-              <CheckCircle2 className="w-4 h-4" /> Mi Sala Activa
+              <CheckCircle2 className="w-4 h-4" /> Sala Activa ({roomCharactersList.length || 1})
             </button>
           )}
 
@@ -188,7 +208,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                 : 'text-wfrp-light/70 hover:text-wfrp-light hover:bg-white/5'
             }`}
           >
-            <LogIn className="w-4 h-4" /> Cargar por Código
+            <LogIn className="w-4 h-4" /> Unirse a Sala
           </button>
 
           <button
@@ -199,7 +219,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                 : 'text-wfrp-light/70 hover:text-wfrp-light hover:bg-white/5'
             }`}
           >
-            <PlusCircle className="w-4 h-4" /> Crear Nueva Sala
+            <PlusCircle className="w-4 h-4" /> Crear Sala de Campaña
           </button>
 
           <button
@@ -244,27 +264,28 @@ export default function CloudRoomModal({ isOpen, onClose }) {
         )}
 
         {/* Contenido según pestaña activa */}
-        <div className="p-6 overflow-y-auto space-y-4">
+        <div className="p-6 overflow-y-auto space-y-5">
           
-          {/* TAB: ESTADO DE SALA ACTIVA */}
+          {/* TAB: ESTADO DE SALA ACTIVA Y SELECTOR MULTI-PERSONAJE */}
           {activeTab === 'status' && roomCode && (
             <div className="space-y-5">
+              {/* Tarjeta del Código de Sala */}
               <div className="bg-wfrp-dark/50 border border-wfrp-gold/40 rounded-xl p-4 text-center relative overflow-hidden">
                 <div className="text-xs uppercase tracking-wider text-wfrp-light/60 font-semibold mb-1">
-                  Código de Sala Activa
+                  Código de Sala de Campaña
                 </div>
-                <div className="font-mono text-3xl font-extrabold text-wfrp-gold tracking-widest my-2 select-all">
+                <div className="font-mono text-3xl font-extrabold text-wfrp-gold tracking-widest my-1 select-all">
                   {roomCode}
                 </div>
-                <p className="text-xs text-wfrp-light/70 max-w-md mx-auto">
-                  Personaje conectado: <strong className="text-wfrp-gold">{character.name || 'Sin Nombre'}</strong> ({character.career || 'Sin Carrera'})
+                <p className="text-xs text-wfrp-light/70 max-w-md mx-auto mb-3">
+                  Comparte este código con tus jugadores y Máster para que todos jueguen en la misma mesa.
                 </p>
 
                 {/* Botones de copia rápida */}
-                <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                   <button
                     onClick={handleCopyCode}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-wfrp-card-header hover:bg-wfrp-gold hover:text-wfrp-dark border border-wfrp-gold/50 rounded-lg text-xs font-bold text-wfrp-light transition-all shadow-md"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-wfrp-card-header hover:bg-wfrp-gold hover:text-wfrp-dark border border-wfrp-gold/50 rounded-lg text-xs font-bold text-wfrp-light transition-all shadow-md"
                   >
                     {isCopiedCode ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                     {isCopiedCode ? '¡Código Copiado!' : 'Copiar Código'}
@@ -272,11 +293,81 @@ export default function CloudRoomModal({ isOpen, onClose }) {
 
                   <button
                     onClick={handleCopyLink}
-                    className="flex items-center gap-1.5 px-3.5 py-2 bg-wfrp-gold/20 hover:bg-wfrp-gold hover:text-wfrp-dark border border-wfrp-gold/60 rounded-lg text-xs font-bold text-wfrp-gold transition-all shadow-md"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-wfrp-gold/20 hover:bg-wfrp-gold hover:text-wfrp-dark border border-wfrp-gold/60 rounded-lg text-xs font-bold text-wfrp-gold transition-all shadow-md"
                   >
                     {isCopiedLink ? <Check className="w-4 h-4 text-emerald-400" /> : <LinkIcon className="w-4 h-4" />}
                     {isCopiedLink ? '¡Enlace Copiado!' : 'Copiar Enlace Directo'}
                   </button>
+                </div>
+              </div>
+
+              {/* LISTA DE PERSONAJES EN LA SALA */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs uppercase font-bold text-wfrp-gold tracking-wide flex items-center gap-2">
+                    <Users className="w-4 h-4" /> Personajes en esta Sala ({roomCharactersList.length || 1})
+                  </h3>
+
+                  <button
+                    type="button"
+                    onClick={handleAddCurrentToRoom}
+                    disabled={actionLoading}
+                    className="text-xs bg-wfrp-gold/20 hover:bg-wfrp-gold hover:text-wfrp-dark text-wfrp-gold border border-wfrp-gold/40 px-2.5 py-1 rounded font-bold transition-all flex items-center gap-1"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" /> Añadir Ficha Actual a la Sala
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {(roomCharactersList.length > 0 ? roomCharactersList : [character]).map(charItem => {
+                    const isCurrent = character.id === charItem.id;
+                    const wounds = charItem.wounds?.current || 12;
+                    const maxW = charItem.wounds?.overrideMax || 14;
+
+                    return (
+                      <div 
+                        key={charItem.id}
+                        className={`p-3 rounded-lg border transition-all flex items-center justify-between gap-2 ${
+                          isCurrent 
+                            ? 'bg-wfrp-gold/15 border-wfrp-gold shadow-md' 
+                            : 'bg-wfrp-dark/40 border-wfrp-gold/20 hover:border-wfrp-gold/50'
+                        }`}
+                      >
+                        <div className="space-y-0.5">
+                          <div className="font-bold text-xs text-wfrp-light flex items-center gap-1.5">
+                            {charItem.isNPC ? '👾' : '🛡️'} {charItem.name || 'Sin Nombre'}
+                            {isCurrent && (
+                              <span className="text-[9px] bg-wfrp-gold text-wfrp-dark font-bold uppercase px-1 rounded">
+                                Seleccionado
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-wfrp-light/60">
+                            {charItem.species} • {charItem.career || 'Sin Carrera'}
+                          </div>
+                          <div className="text-[10px] text-rose-300 flex items-center gap-1">
+                            <Heart className="w-3 h-3 text-red-400" /> {wounds} / {maxW} Heridas
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            selectCharacterFromRoom(charItem.id);
+                            setActionMessage({ type: 'success', text: `Cambiado a: ${charItem.name}` });
+                          }}
+                          className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1 ${
+                            isCurrent
+                              ? 'bg-wfrp-gold text-wfrp-dark'
+                              : 'bg-wfrp-card-header hover:bg-wfrp-gold hover:text-wfrp-dark text-wfrp-light border border-wfrp-gold/30'
+                          }`}
+                        >
+                          <UserCheck className="w-3.5 h-3.5" />
+                          {isCurrent ? 'Activo' : 'Jugar con este'}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -292,7 +383,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                     )}
                     {cloudStatus === 'synced' && (
                       <span className="text-emerald-400 flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5" /> Sincronizado
+                        <Check className="w-3.5 h-3.5" /> Sincronizado en tiempo real
                       </span>
                     )}
                     {cloudStatus === 'error' && (
@@ -305,19 +396,6 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                     )}
                   </span>
                 </div>
-
-                {cloudLastSaved && (
-                  <div className="flex items-center justify-between text-wfrp-light/50">
-                    <span>Último guardado en nube:</span>
-                    <span>{new Date(cloudLastSaved).toLocaleTimeString()}</span>
-                  </div>
-                )}
-
-                {cloudError && (
-                  <p className="text-rose-400 text-xs bg-rose-950/50 p-2 rounded border border-rose-800/40">
-                    {cloudError}
-                  </p>
-                )}
 
                 {/* Sincronización automática toggle */}
                 <div className="pt-2 border-t border-wfrp-gold/10 flex items-center justify-between">
@@ -349,7 +427,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 rounded border border-rose-900/40 transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  Desconectar de esta sala
+                  Salir de esta sala
                 </button>
               </div>
             </div>
@@ -360,14 +438,14 @@ export default function CloudRoomModal({ isOpen, onClose }) {
             <form onSubmit={handleJoinRoom} className="space-y-4">
               <div>
                 <label className="block text-xs uppercase font-bold text-wfrp-gold tracking-wide mb-1.5">
-                  Introduce el Código de Sala (ej: WFRP-8831)
+                  Introduce el Código de Sala de Campaña (ej: REIK-8831)
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={joinCodeInput}
                     onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    placeholder="WFRP-XXXX"
+                    placeholder="REIK-XXXX"
                     className="flex-1 bg-wfrp-dark/70 border border-wfrp-gold/50 rounded-lg px-4 py-2.5 text-wfrp-light font-mono text-lg tracking-wider placeholder:text-wfrp-light/30 focus:outline-none focus:border-wfrp-gold"
                     autoFocus
                   />
@@ -381,15 +459,15 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                     ) : (
                       <LogIn className="w-4 h-4" />
                     )}
-                    Cargar Ficha
+                    Entrar a la Sala
                   </button>
                 </div>
               </div>
 
               <div className="bg-wfrp-dark/40 border border-wfrp-gold/20 rounded-lg p-3.5 text-xs text-wfrp-light/70 space-y-1.5">
-                <p className="font-semibold text-wfrp-gold">💡 ¿Cómo funciona?</p>
+                <p className="font-semibold text-wfrp-gold">💡 Salas de Campaña Multi-Personaje</p>
                 <p>
-                  Si creaste una ficha en tu ordenador o tu Director de Juego te dio un código, solo tienes que escribirlo aquí para recuperar toda tu información de forma instantánea.
+                  Al unirte con el código de tu campaña, podrás elegir tu personaje entre los disponibles o crear uno nuevo dentro de la mesa.
                 </p>
               </div>
             </form>
@@ -399,7 +477,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
           {activeTab === 'create' && (
             <div className="space-y-4">
               <p className="text-xs text-wfrp-light/80">
-                Sube la ficha actual (<strong>{character.name || 'Sin Nombre'}</strong>) a una nueva sala online con un código permanente.
+                Crea una sala de campaña online compartida para tu mesa de juego.
               </p>
 
               <div>
@@ -410,7 +488,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                   type="text"
                   value={customCodeInput}
                   onChange={(e) => setCustomCodeInput(e.target.value.toUpperCase())}
-                  placeholder="Dejar vacío para código aleatorio (ej: WFRP-7A9B)"
+                  placeholder="Dejar vacío para código aleatorio (ej: REIK-7A9B)"
                   className="w-full bg-wfrp-dark/70 border border-wfrp-gold/50 rounded-lg px-4 py-2 text-wfrp-light font-mono text-sm tracking-wider placeholder:text-wfrp-light/30 focus:outline-none focus:border-wfrp-gold"
                 />
               </div>
@@ -425,7 +503,7 @@ export default function CloudRoomModal({ isOpen, onClose }) {
                 ) : (
                   <Sparkles className="w-4 h-4" />
                 )}
-                Publicar Ficha y Generar Código de Sala
+                Crear Sala de Campaña y Generar Código
               </button>
             </div>
           )}
