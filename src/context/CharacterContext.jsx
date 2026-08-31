@@ -1,11 +1,20 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { DEFAULT_CHARACTER } from '../data/defaultCharacter';
 import { getHitLocationFromRoll } from '../data/hitLocations';
+import { 
+  generateRoomCode, 
+  normalizeRoomCode, 
+  saveRoomToCloud, 
+  loadRoomFromCloud, 
+  subscribeToRoom 
+} from '../services/cloudStorage';
+import { getStoredFirebaseConfig } from '../services/firebase';
 
 const CharacterContext = createContext();
 
 const STORAGE_KEY_ACTIVE = 'wfrp4e_active_character';
 const STORAGE_KEY_CHAR_LIST = 'wfrp4e_saved_characters_list';
+const STORAGE_KEY_ACTIVE_ROOM = 'wfrp4e_active_room_code';
 
 export function CharacterProvider({ children }) {
   // Cargar personaje inicial
@@ -34,9 +43,28 @@ export function CharacterProvider({ children }) {
     return [{ id: DEFAULT_CHARACTER.id, name: DEFAULT_CHARACTER.name, career: DEFAULT_CHARACTER.career }];
   });
 
-  // Estado de sincronización visual
+  // Estado de sincronización visual local
   const [lastSaved, setLastSaved] = useState(Date.now());
   const [isSaving, setIsSaving] = useState(false);
+
+  // Estados de Sala en la Nube (Cloud Room)
+  const [roomCode, setRoomCode] = useState(() => {
+    // Si viene en el query param de la URL (?room=WFRP-XXXX), priorizarlo
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlRoom = params.get('room');
+      if (urlRoom) return normalizeRoomCode(urlRoom);
+      return localStorage.getItem(STORAGE_KEY_ACTIVE_ROOM) || '';
+    } catch {
+      return '';
+    }
+  });
+
+  const [cloudStatus, setCloudStatus] = useState('idle'); // 'idle' | 'syncing' | 'synced' | 'error'
+  const [cloudError, setCloudError] = useState(null);
+  const [cloudLastSaved, setCloudLastSaved] = useState(null);
+  const [autoSyncCloud, setAutoSyncCloud] = useState(true);
+  const isReceivingRemoteUpdateRef = useRef(false);
 
   // Estado del modal de tirada de dados
   const [diceModal, setDiceModal] = useState({
@@ -84,11 +112,127 @@ export function CharacterProvider({ children }) {
       localStorage.setItem(`wfrp4e_char_${character.id}`, JSON.stringify(character));
       setLastSaved(Date.now());
     } catch (e) {
-      console.error('Error saving character', e);
+      console.error('Error saving character to localStorage', e);
     } finally {
       setTimeout(() => setIsSaving(false), 300);
     }
   }, [character]);
+
+  // Manejar persistencia del roomCode activo en localStorage
+  useEffect(() => {
+    if (roomCode) {
+      localStorage.setItem(STORAGE_KEY_ACTIVE_ROOM, roomCode);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_ACTIVE_ROOM);
+    }
+  }, [roomCode]);
+
+  // Carga automática inicial si venía ?room= en la URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlRoom = params.get('room');
+    if (urlRoom && getStoredFirebaseConfig()) {
+      const code = normalizeRoomCode(urlRoom);
+      joinCloudRoom(code).catch(err => {
+        console.warn('No se pudo cargar la sala de la URL automáticamente:', err);
+      });
+    }
+  }, []);
+
+  // Sincronización automática con la nube cuando cambia el personaje y hay sala activa
+  useEffect(() => {
+    if (!roomCode || !autoSyncCloud || isReceivingRemoteUpdateRef.current) {
+      isReceivingRemoteUpdateRef.current = false;
+      return;
+    }
+
+    if (!getStoredFirebaseConfig()) {
+      return;
+    }
+
+    setCloudStatus('syncing');
+    const timer = setTimeout(async () => {
+      try {
+        await saveRoomToCloud(roomCode, character);
+        setCloudStatus('synced');
+        setCloudLastSaved(Date.now());
+        setCloudError(null);
+      } catch (err) {
+        console.error('Error auto-syncing to cloud:', err);
+        setCloudStatus('error');
+        setCloudError(err.message || 'Error al sincronizar con la nube');
+      }
+    }, 1200); // 1.2s debounce
+
+    return () => clearTimeout(timer);
+  }, [character, roomCode, autoSyncCloud]);
+
+  // Crear una nueva sala en la nube
+  const createCloudRoom = async (customCode = null) => {
+    const code = customCode ? normalizeRoomCode(customCode) : generateRoomCode();
+    setCloudStatus('syncing');
+    setCloudError(null);
+    try {
+      await saveRoomToCloud(code, character);
+      setRoomCode(code);
+      setCloudStatus('synced');
+      setCloudLastSaved(Date.now());
+      return code;
+    } catch (err) {
+      setCloudStatus('error');
+      setCloudError(err.message);
+      throw err;
+    }
+  };
+
+  // Unirse y cargar una sala existente
+  const joinCloudRoom = async (codeToJoin) => {
+    const code = normalizeRoomCode(codeToJoin);
+    if (!code) throw new Error('Debes ingresar un código de sala');
+
+    setCloudStatus('syncing');
+    setCloudError(null);
+    try {
+      const loadedChar = await loadRoomFromCloud(code);
+      if (loadedChar && loadedChar.characteristics) {
+        isReceivingRemoteUpdateRef.current = true;
+        setCharacter(loadedChar);
+        setRoomCode(code);
+        setCloudStatus('synced');
+        setCloudLastSaved(Date.now());
+        return loadedChar;
+      } else {
+        throw new Error('La ficha encontrada no tiene un formato válido.');
+      }
+    } catch (err) {
+      setCloudStatus('error');
+      setCloudError(err.message);
+      throw err;
+    }
+  };
+
+  // Forzar guardado inmediato en la nube
+  const syncToCloudNow = async () => {
+    if (!roomCode) throw new Error('No hay ninguna sala conectada.');
+    setCloudStatus('syncing');
+    setCloudError(null);
+    try {
+      await saveRoomToCloud(roomCode, character);
+      setCloudStatus('synced');
+      setCloudLastSaved(Date.now());
+    } catch (err) {
+      setCloudStatus('error');
+      setCloudError(err.message);
+      throw err;
+    }
+  };
+
+  // Desconectar de la sala actual
+  const disconnectCloudRoom = () => {
+    setRoomCode('');
+    setCloudStatus('idle');
+    setCloudError(null);
+  };
 
   // Actualizar un campo anidado o raíz del personaje
   const updateCharacter = (updater) => {
@@ -114,7 +258,7 @@ export function CharacterProvider({ children }) {
 
   // Bonificadores calculados
   const SB = getStatBonus('S');
-  const TB = getStatBonus('T');
+  const TB = getStatBonus('TB') || getStatBonus('T');
   const WPB = getStatBonus('WP');
   const IB = getStatBonus('I');
   const AgB = getStatBonus('Ag');
@@ -124,16 +268,15 @@ export function CharacterProvider({ children }) {
   // Heridas máximas según reglas oficiales 4e: SB + (2 * TB) + WPB + bono de talentos como Hardy
   const calculatedMaxWounds = (() => {
     if (character.wounds?.overrideMax) return Number(character.wounds.overrideMax);
-    // Modificadores por especie si aplica (por defecto Humano/Elfo/Enano)
     let base = SB + (2 * TB) + WPB;
     if (character.species?.toLowerCase().includes('halfling')) {
-      base = (2 * TB) + WPB; // Halflings no suman SB
+      base = (2 * TB) + WPB;
     }
     const hardyBonus = Number(character.wounds?.hardyBonus) || 0;
     return Math.max(1, base + hardyBonus);
   })();
 
-  // Carga máxima (Encumbrance Max) = SB + TB (+ bonos)
+  // Carga máxima (Encumbrance Max) = SB + TB
   const maxEncumbrance = SB + TB;
 
   // Carga actual calculada
@@ -174,30 +317,28 @@ export function CharacterProvider({ children }) {
   };
 
   const executeRoll = (modifier = 0) => {
-    const roll = Math.floor(Math.random() * 100) + 1; // 1 a 100
+    const roll = Math.floor(Math.random() * 100) + 1;
     const finalTarget = Math.max(1, diceModal.targetNumber + modifier);
     
-    // Cálculo oficial de Niveles de Éxito (SL / Success Levels)
+    // Cálculo oficial de Niveles de Éxito (SL)
     const targetTens = Math.floor(finalTarget / 10);
     const rollTens = Math.floor(roll / 10);
     let sl = targetTens - rollTens;
 
     const isSuccess = roll <= finalTarget;
     
-    // Detección de Críticos y Pifias (Dobles: 11, 22, 33, 44, 55, 66, 77, 88, 99 o 100 y 01-05)
     const isDouble = roll % 11 === 0 || roll === 100;
     let isCritical = false;
     let isFumble = false;
 
     if (roll >= 96 || (isDouble && !isSuccess)) {
       isFumble = true;
-      if (sl > 0) sl = -1; // Las pifias nunca dan SL positivo
+      if (sl > 0) sl = -1;
     } else if (roll <= 5 || (isDouble && isSuccess)) {
       isCritical = true;
-      if (sl < 1) sl = 1; // Los críticos dan al menos +1 SL
+      if (sl < 1) sl = 1;
     }
 
-    // Localización de impacto si es combate
     let hitLocation = null;
     let totalDamage = null;
 
@@ -227,7 +368,7 @@ export function CharacterProvider({ children }) {
     };
 
     setDiceModal(prev => ({ ...prev, rollResult: result, modifier }));
-    setRollHistory(prev => [result, ...prev.slice(0, 29)]); // Guardar últimas 30 tiradas
+    setRollHistory(prev => [result, ...prev.slice(0, 29)]);
   };
 
   const closeDiceModal = () => {
@@ -265,7 +406,7 @@ export function CharacterProvider({ children }) {
     reader.readAsText(file);
   };
 
-  // Cambiar a otro personaje guardado
+  // Cambiar a otro personaje guardado localmente
   const switchCharacter = (charId) => {
     try {
       const saved = localStorage.getItem(`wfrp4e_char_${charId}`);
@@ -326,6 +467,17 @@ export function CharacterProvider({ children }) {
       closeDiceModal,
       rollHistory,
       clearRollHistory: () => setRollHistory([]),
+      // Propiedades de la Nube (Cloud Room)
+      roomCode,
+      cloudStatus,
+      cloudError,
+      cloudLastSaved,
+      autoSyncCloud,
+      setAutoSyncCloud,
+      createCloudRoom,
+      joinCloudRoom,
+      syncToCloudNow,
+      disconnectCloudRoom,
     }}>
       {children}
     </CharacterContext.Provider>
@@ -339,3 +491,4 @@ export function useCharacter() {
   }
   return context;
 }
+
