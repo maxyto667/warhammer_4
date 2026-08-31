@@ -10,9 +10,11 @@ import {
   RefreshCw, 
   UserCheck,
   Cloud,
-  AlertTriangle
+  AlertTriangle,
+  Sparkles
 } from 'lucide-react';
 import CloudRoomModal from './CloudRoomModal';
+import AIAssistantModal from './AIAssistantModal';
 
 export default function CharacterManager() {
   const {
@@ -30,6 +32,7 @@ export default function CharacterManager() {
 
   const fileInputRef = useRef(null);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -93,6 +96,17 @@ export default function CharacterManager() {
 
         {/* Acciones del Gestor de Personajes */}
         <div className="flex flex-wrap items-center gap-2 justify-end">
+          {/* Botón de Asistente IA (Oráculo de Sigmar) */}
+          <button
+            type="button"
+            onClick={() => setIsAIModalOpen(true)}
+            className="bg-purple-950/80 hover:bg-purple-900 border border-purple-500/60 text-purple-200 px-3 py-1 rounded text-xs flex items-center gap-1.5 font-subheading font-bold transition-all shadow-sm cursor-pointer"
+            title="Consultar al Oráculo IA: Recomendaciones de XP, trasfondo y tácticas de combate"
+          >
+            <Sparkles size={14} className="text-amber-300 animate-pulse" />
+            🔮 Oráculo IA (XP)
+          </button>
+
           {/* Botón de Nube / Sala Online */}
           <button
             type="button"
@@ -194,6 +208,12 @@ export default function CharacterManager() {
       <CloudRoomModal 
         isOpen={isCloudModalOpen} 
         onClose={() => setIsCloudModalOpen(false)} 
+      />
+
+      {/* Modal del Asistente IA (Oráculo de Sigmar) */}
+      <AIAssistantModal
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
       />
     </>
   );
