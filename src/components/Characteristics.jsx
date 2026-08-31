@@ -1,6 +1,7 @@
 import React from 'react';
 import { useCharacter } from '../context/CharacterContext';
-import { Dices } from 'lucide-react';
+import { Dices, Plus, Minus } from 'lucide-react';
+import { getCharacteristicAdvanceCost } from '../data/xpRules';
 
 const STATS_ORDER = [
   { key: 'WS', label: 'WS', fullName: 'Habilidad de Armas (Weapon Skill)', icon: '⚔️' },
@@ -16,7 +17,14 @@ const STATS_ORDER = [
 ];
 
 export default function Characteristics() {
-  const { character, updateCharacter, getStatTotal, getStatBonus, triggerRoll } = useCharacter();
+  const { 
+    character, 
+    updateCharacter, 
+    getStatTotal, 
+    getStatBonus, 
+    triggerRoll,
+    advanceCharacteristic 
+  } = useCharacter();
 
   const handleStatChange = (statKey, field, value) => {
     updateCharacter(prev => ({
@@ -31,15 +39,23 @@ export default function Characteristics() {
     }));
   };
 
+  const availableXp = character.exp?.current ?? 0;
+
   return (
     <div className="parchment-panel p-4 rounded-lg border-2 border-imperial-gold/40 mb-6 shadow-grim">
-      <div className="flex items-center justify-between border-b border-imperial-gold/30 pb-2 mb-3">
-        <h2 className="text-base font-heading font-bold uppercase tracking-wider text-imperial-gold flex items-center gap-2">
-          <span>❖</span> Características Principales (Characteristics)
-        </h2>
-        <span className="text-xs text-parchment-400 italic">
-          Haz clic en el dado o en el Total para tirar un Test d100
-        </span>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-imperial-gold/30 pb-2 mb-3 gap-2">
+        <div>
+          <h2 className="text-base font-heading font-bold uppercase tracking-wider text-imperial-gold flex items-center gap-2">
+            <span>❖</span> Características Principales (Characteristics)
+          </h2>
+          <span className="text-xs text-parchment-400 italic">
+            Usa los botones + y - para comprar avances automáticos con tus XP disponibles ({availableXp} XP disp.)
+          </span>
+        </div>
+
+        <div className="text-xs bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 px-3 py-1 rounded font-bold">
+          XP Disponible: {availableXp} XP
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2">
@@ -47,6 +63,9 @@ export default function Characteristics() {
           const total = getStatTotal(key);
           const bonus = getStatBonus(key);
           const statObj = character.characteristics?.[key] || { initial: 30, advances: 0, modifier: 0 };
+          const advances = Number(statObj.advances) || 0;
+          const nextCost = getCharacteristicAdvanceCost(advances);
+          const canAfford = availableXp >= nextCost;
 
           return (
             <div
@@ -82,8 +101,42 @@ export default function Characteristics() {
                 Bono: <strong className="text-amber-200">{bonus}</strong>
               </div>
 
-              {/* Inputs de Inicial, Avances y Modificadores */}
-              <div className="grid grid-cols-3 gap-1 w-full text-[10px]">
+              {/* Controles de Avance Automático con XP */}
+              <div className="flex items-center justify-between w-full bg-grim-950/90 border border-imperial-gold/20 rounded p-1 mb-1.5">
+                <button
+                  type="button"
+                  disabled={advances <= 0}
+                  onClick={() => advanceCharacteristic(key, -1)}
+                  className="w-5 h-5 rounded bg-grim-900 hover:bg-rose-950 text-rose-300 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold border border-rose-800/30"
+                  title="Reembolsar 1 avance y recuperar XP"
+                >
+                  <Minus size={10} />
+                </button>
+
+                <div className="text-[10px] font-bold text-emerald-300" title={`Avances: +${advances}`}>
+                  +{advances}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => advanceCharacteristic(key, 1)}
+                  className={`w-5 h-5 rounded flex items-center justify-center text-xs font-bold border transition-all ${
+                    canAfford 
+                      ? 'bg-emerald-950 hover:bg-emerald-800 text-emerald-200 border-emerald-500/50' 
+                      : 'bg-grim-900 text-parchment-500 border-grim-700 hover:border-amber-500/50'
+                  }`}
+                  title={`Comprar +1 avance por ${nextCost} XP (Disponibles: ${availableXp} XP)`}
+                >
+                  <Plus size={10} />
+                </button>
+              </div>
+
+              <div className="text-[9px] text-parchment-400 mb-1">
+                Sig: <span className="text-amber-300 font-mono font-bold">{nextCost} XP</span>
+              </div>
+
+              {/* Inputs manuales de Inicial y Modificador */}
+              <div className="grid grid-cols-2 gap-1 w-full text-[10px]">
                 <div>
                   <span className="text-parchment-400 block mb-0.5" title="Inicial">Ini</span>
                   <input
@@ -91,15 +144,6 @@ export default function Characteristics() {
                     value={statObj.initial ?? 30}
                     onChange={(e) => handleStatChange(key, 'initial', e.target.value)}
                     className="w-full bg-grim-950 text-center text-parchment-200 border border-grim-700 rounded py-0.5 focus:border-imperial-gold focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-parchment-400 block mb-0.5" title="Avances por Exp">Avn</span>
-                  <input
-                    type="number"
-                    value={statObj.advances ?? 0}
-                    onChange={(e) => handleStatChange(key, 'advances', e.target.value)}
-                    className="w-full bg-grim-950 text-center text-emerald-300 border border-grim-700 rounded py-0.5 focus:border-imperial-gold focus:outline-none font-bold"
                   />
                 </div>
                 <div>
@@ -119,3 +163,4 @@ export default function Characteristics() {
     </div>
   );
 }
+

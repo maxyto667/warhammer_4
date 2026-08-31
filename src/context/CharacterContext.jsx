@@ -2,6 +2,12 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { DEFAULT_CHARACTER } from '../data/defaultCharacter';
 import { getHitLocationFromRoll } from '../data/hitLocations';
 import { 
+  getCharacteristicAdvanceCost, 
+  getSkillAdvanceCost, 
+  getTalentCost, 
+  getCareerPromotionCost 
+} from '../data/xpRules';
+import { 
   generateRoomCode, 
   normalizeRoomCode, 
   saveRoomToCloud, 
@@ -320,6 +326,236 @@ export function CharacterProvider({ children }) {
     setCloudError(null);
   };
 
+  // Añadir puntos de Experiencia (ganada en sesión o por el DM)
+  const addXP = (amount) => {
+    const val = Number(amount) || 0;
+    if (val === 0) return;
+    setCharacter(prev => {
+      const exp = prev.exp || { current: 0, spent: 0, total: 0 };
+      const current = Math.max(0, (Number(exp.current) || 0) + val);
+      const total = Math.max(0, (Number(exp.total) || 0) + (val > 0 ? val : 0));
+      return {
+        ...prev,
+        exp: { ...exp, current, total }
+      };
+    });
+  };
+
+  // Avance de Característica con coste y deducción automática de XP
+  const advanceCharacteristic = (statKey, delta = 1) => {
+    setCharacter(prev => {
+      const statObj = prev.characteristics?.[statKey] || { initial: 30, advances: 0, modifier: 0 };
+      const currentAdvances = Number(statObj.advances) || 0;
+      const exp = prev.exp || { current: 0, spent: 0, total: 0 };
+      const currentXp = Number(exp.current) || 0;
+      const spentXp = Number(exp.spent) || 0;
+
+      if (delta > 0) {
+        // Comprar +1 avance
+        const cost = getCharacteristicAdvanceCost(currentAdvances);
+        if (currentXp < cost) {
+          alert(`No tienes suficiente XP disponible (${currentXp} XP). Necesitas ${cost} XP para subir ${statObj.name || statKey}.`);
+          return prev;
+        }
+        return {
+          ...prev,
+          exp: {
+            ...exp,
+            current: currentXp - cost,
+            spent: spentXp + cost
+          },
+          characteristics: {
+            ...prev.characteristics,
+            [statKey]: {
+              ...statObj,
+              advances: currentAdvances + 1
+            }
+          }
+        };
+      } else if (delta < 0 && currentAdvances > 0) {
+        // Reembolsar -1 avance
+        const refundCost = getCharacteristicAdvanceCost(currentAdvances - 1);
+        return {
+          ...prev,
+          exp: {
+            ...exp,
+            current: currentXp + refundCost,
+            spent: Math.max(0, spentXp - refundCost)
+          },
+          characteristics: {
+            ...prev.characteristics,
+            [statKey]: {
+              ...statObj,
+              advances: currentAdvances - 1
+            }
+          }
+        };
+      }
+      return prev;
+    });
+  };
+
+  // Avance de Habilidad Básica con coste y deducción automática de XP
+  const advanceBasicSkill = (index, delta = 1, isCareer = true) => {
+    setCharacter(prev => {
+      const skills = [...(prev.skills || [])];
+      const targetSkill = skills[index];
+      if (!targetSkill) return prev;
+
+      const currentAdvances = Number(targetSkill.advances) || 0;
+      const exp = prev.exp || { current: 0, spent: 0, total: 0 };
+      const currentXp = Number(exp.current) || 0;
+      const spentXp = Number(exp.spent) || 0;
+
+      if (delta > 0) {
+        const cost = getSkillAdvanceCost(currentAdvances, isCareer);
+        if (currentXp < cost) {
+          alert(`No tienes suficiente XP disponible (${currentXp} XP). Necesitas ${cost} XP para subir ${targetSkill.name}.`);
+          return prev;
+        }
+        skills[index] = { ...targetSkill, advances: currentAdvances + 1 };
+        return {
+          ...prev,
+          exp: {
+            ...exp,
+            current: currentXp - cost,
+            spent: spentXp + cost
+          },
+          skills
+        };
+      } else if (delta < 0 && currentAdvances > 0) {
+        const refundCost = getSkillAdvanceCost(currentAdvances - 1, isCareer);
+        skills[index] = { ...targetSkill, advances: currentAdvances - 1 };
+        return {
+          ...prev,
+          exp: {
+            ...exp,
+            current: currentXp + refundCost,
+            spent: Math.max(0, spentXp - refundCost)
+          },
+          skills
+        };
+      }
+      return prev;
+    });
+  };
+
+  // Avance de Habilidad Avanzada con coste y deducción de XP
+  const advanceAdvSkill = (skillId, delta = 1, isCareer = true) => {
+    setCharacter(prev => {
+      const advSkills = [...(prev.advancedSkills || [])];
+      const index = advSkills.findIndex(s => s.id === skillId);
+      if (index === -1) return prev;
+
+      const targetSkill = advSkills[index];
+      const currentAdvances = Number(targetSkill.advances) || 0;
+      const exp = prev.exp || { current: 0, spent: 0, total: 0 };
+      const currentXp = Number(exp.current) || 0;
+      const spentXp = Number(exp.spent) || 0;
+
+      if (delta > 0) {
+        const cost = getSkillAdvanceCost(currentAdvances, isCareer);
+        if (currentXp < cost) {
+          alert(`No tienes suficiente XP disponible (${currentXp} XP). Necesitas ${cost} XP para subir ${targetSkill.name}.`);
+          return prev;
+        }
+        advSkills[index] = { ...targetSkill, advances: currentAdvances + 1 };
+        return {
+          ...prev,
+          exp: {
+            ...exp,
+            current: currentXp - cost,
+            spent: spentXp + cost
+          },
+          advancedSkills: advSkills
+        };
+      } else if (delta < 0 && currentAdvances > 0) {
+        const refundCost = getSkillAdvanceCost(currentAdvances - 1, isCareer);
+        advSkills[index] = { ...targetSkill, advances: currentAdvances - 1 };
+        return {
+          ...prev,
+          exp: {
+            ...exp,
+            current: currentXp + refundCost,
+            spent: Math.max(0, spentXp - refundCost)
+          },
+          advancedSkills: advSkills
+        };
+      }
+      return prev;
+    });
+  };
+
+  // Comprar o subir Rango de Talento con XP
+  const purchaseTalent = (talentName, currentRank = 0, isCareer = true) => {
+    const cost = getTalentCost(currentRank, isCareer);
+    const exp = character.exp || { current: 0, spent: 0, total: 0 };
+    const currentXp = Number(exp.current) || 0;
+
+    if (currentXp < cost) {
+      alert(`No tienes suficiente XP disponible (${currentXp} XP). Necesitas ${cost} XP para adquirir el rango ${currentRank + 1} de este talento.`);
+      return false;
+    }
+
+    setCharacter(prev => {
+      const expObj = prev.exp || { current: 0, spent: 0, total: 0 };
+      const existingTalents = [...(prev.talents || [])];
+      const index = existingTalents.findIndex(t => t.name === talentName);
+
+      if (index >= 0) {
+        existingTalents[index] = {
+          ...existingTalents[index],
+          rank: (Number(existingTalents[index].rank) || 1) + 1
+        };
+      } else {
+        existingTalents.push({
+          id: `talent-${Date.now()}`,
+          name: talentName,
+          rank: 1,
+          description: ''
+        });
+      }
+
+      return {
+        ...prev,
+        exp: {
+          ...expObj,
+          current: (Number(expObj.current) || 0) - cost,
+          spent: (Number(expObj.spent) || 0) + cost
+        },
+        talents: existingTalents
+      };
+    });
+    return true;
+  };
+
+  // Promoción o Cambio de Carrera con deducción de XP
+  const promoteCareer = (newCareer, isSameClass = true) => {
+    const cost = getCareerPromotionCost(isSameClass);
+    const exp = character.exp || { current: 0, spent: 0, total: 0 };
+    const currentXp = Number(exp.current) || 0;
+
+    if (currentXp < cost) {
+      alert(`No tienes suficiente XP disponible (${currentXp} XP). Necesitas ${cost} XP para ascender o cambiar a la carrera "${newCareer}".`);
+      return false;
+    }
+
+    setCharacter(prev => {
+      const expObj = prev.exp || { current: 0, spent: 0, total: 0 };
+      return {
+        ...prev,
+        career: newCareer,
+        careerTier: (Number(prev.careerTier) || 1) + 1,
+        exp: {
+          ...expObj,
+          current: (Number(expObj.current) || 0) - cost,
+          spent: (Number(expObj.spent) || 0) + cost
+        }
+      };
+    });
+    return true;
+  };
+
   // Actualizar un campo anidado o raíz del personaje
   const updateCharacter = (updater) => {
     setCharacter(prev => {
@@ -553,6 +789,13 @@ export function CharacterProvider({ children }) {
       closeDiceModal,
       rollHistory,
       clearRollHistory: () => setRollHistory([]),
+      // Gestión y Deducción de Experiencia (XP)
+      addXP,
+      advanceCharacteristic,
+      advanceBasicSkill,
+      advanceAdvSkill,
+      purchaseTalent,
+      promoteCareer,
       // Propiedades de la Nube (Cloud Room Multi-Personaje)
       roomCode,
       roomCharactersList,

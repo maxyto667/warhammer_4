@@ -193,26 +193,44 @@ export default function Header() {
             </div>
 
             {/* Puntos de Experiencia */}
-            <div className="bg-grim-900/90 p-2 rounded border border-emerald-500/20 text-center">
-              <div className="flex items-center justify-center gap-1 text-xs text-emerald-400 font-subheading uppercase">
-                <Award size={12} /> Exp (Disp / Total)
+            <div className="bg-grim-900/90 p-2 rounded border border-emerald-500/30 text-center">
+              <div className="flex items-center justify-between gap-1 text-[11px] text-emerald-400 font-subheading uppercase font-bold">
+                <span className="flex items-center gap-1"><Award size={12} /> XP (Disp / Tot)</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const amount = window.prompt('¿Cuántos puntos de Experiencia (XP) deseas añadir por la sesión?', '50');
+                    if (amount && !isNaN(Number(amount))) {
+                      const val = Number(amount);
+                      handleNestedChange('exp', 'total', (character.exp?.total || 0) + val);
+                      handleNestedChange('exp', 'current', (character.exp?.current || 0) + val);
+                    }
+                  }}
+                  className="text-[9px] bg-emerald-950 hover:bg-emerald-800 text-emerald-200 px-1 py-0.5 rounded border border-emerald-500/40"
+                  title="Añadir XP ganada en sesión de juego"
+                >
+                  +XP
+                </button>
               </div>
-              <div className="flex items-center justify-center gap-2 mt-1">
+              <div className="flex items-center justify-center gap-1.5 mt-1">
                 <input
                   type="number"
-                  title="Experiencia Actual Disponible"
+                  title="Experiencia Actual Disponible (para gastar)"
                   value={character.exp?.current ?? 0}
                   onChange={(e) => handleNestedChange('exp', 'current', Number(e.target.value))}
-                  className="w-12 bg-grim-950 text-center text-emerald-300 font-bold border border-emerald-500/40 rounded py-0.5"
+                  className="w-12 bg-grim-950 text-center text-emerald-300 font-bold border border-emerald-500/50 rounded py-0.5 text-xs"
                 />
-                <span className="text-emerald-500/50">/</span>
+                <span className="text-emerald-500/50 text-xs">/</span>
                 <input
                   type="number"
-                  title="Experiencia Total Acumulada"
+                  title="Experiencia Total Acumulada en la Campaña"
                   value={character.exp?.total ?? 0}
                   onChange={(e) => handleNestedChange('exp', 'total', Number(e.target.value))}
-                  className="w-12 bg-emerald-950/40 text-center text-emerald-200 font-bold border border-emerald-500/40 rounded py-0.5"
+                  className="w-12 bg-emerald-950/40 text-center text-emerald-200 font-bold border border-emerald-500/30 rounded py-0.5 text-xs"
                 />
+              </div>
+              <div className="text-[9px] text-parchment-400 mt-0.5">
+                Gastada: <strong className="text-amber-300">{character.exp?.spent ?? 0} XP</strong>
               </div>
             </div>
           </div>
