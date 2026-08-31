@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-parchment: #f6eedb;
+    --text-ink: #2b1f14;
+    --accent-wax: #8b1818;
+    --accent-gold: #b8860b;
+    --border-frame: #b59560;
+  }
+
+  body {
+    font-family: 'Alegreya', Georgia, serif;
+    background-color: #0d0f12;
+    background-image: 
+      radial-gradient(circle at 50% 0%, rgba(184, 134, 11, 0.08) 0%, transparent 60%),
+      radial-gradient(circle at 100% 100%, rgba(123, 24, 24, 0.06) 0%, transparent 50%);
+    color: #e6decb;
+  }
+
+  /* Custom styled scrollbars */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #14171d;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #3a414f;
+    border-radius: 4px;
+    border: 1px solid #5a6477;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c59b27;
+  }
+}
+
+/* Clases y utilidades estilísticas de Warhammer */
+@layer components {
+  .parchment-panel {
+    background-color: #161920;
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0.25) 100%);
+    border: 1px solid rgba(197, 155, 39, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 15px rgba(0, 0, 0, 0.4);
+    position: relative;
+  }
+
+  .parchment-panel::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    right: 2px;
+    bottom: 2px;
+    border: 1px solid rgba(197, 155, 39, 0.12);
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* Esquinas góticas ornamentadas */
+  .gothic-corner {
+    position: relative;
+  }
+  .gothic-corner::after {
+    content: '❖';
+    position: absolute;
+    font-size: 10px;
+    color: #c59b27;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .wax-seal-badge {
+    background: radial-gradient(circle at 35% 35%, #b91c1c 0%, #7f1d1d 60%, #450a0a 100%);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.4);
+    border: 1px solid #991b1b;
+  }
+
+  .gold-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(197, 155, 39, 0.6), transparent);
+  }
+
+  .dice-roll-btn {
+    transition: all 0.2s ease-in-out;
+  }
+  .dice-roll-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 12px rgba(197, 155, 39, 0.4);
+  }
+
+  /* Modo impresión limpio para papel */
+  @media print {
+    body {
+      background: white !important;
+      color: black !important;
+    }
+    .no-print {
+      display: none !important;
+    }
+    .parchment-panel {
+      background: white !important;
+      border: 1px solid #333 !important;
+      box-shadow: none !important;
+      color: black !important;
+    }
+  }
+}
