@@ -4,6 +4,26 @@ import { getFirebaseDb } from './firebase';
 const COLLECTION_NAME = 'wfrp4e_rooms';
 
 /**
+ * Función auxiliar para evitar que una petición a la nube quede colgada indefinidamente
+ */
+const withTimeout = (promise, ms = 8000, errorMsg = 'Tiempo de espera agotado.') => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `${errorMsg} Comprueba que en la consola de Firebase > Firestore Database > pestaña "Reglas" tengas habilitado: allow read, write: if true;`
+            )
+          ),
+        ms
+      )
+    ),
+  ]);
+};
+
+/**
  * Genera un código de sala corto y legible (ej: REIK-7K9A o WFRP-7K9A)
  */
 export const generateRoomCode = () => {
@@ -29,7 +49,7 @@ export const normalizeRoomCode = (code) => {
 export const saveRoomToCloud = async (roomCode, characterData) => {
   const db = getFirebaseDb();
   if (!db) {
-    throw new Error('Firebase no está configurado. Por favor, añade la configuración de Firebase.');
+    throw new Error('Firebase no está configurado. Ve a "☁️ Nube / Sala" > "⚙️ Configurar" y añade tu configuración de Firebase.');
   }
 
   const cleanCode = normalizeRoomCode(roomCode);
@@ -40,31 +60,46 @@ export const saveRoomToCloud = async (roomCode, characterData) => {
   const charId = characterData.id || `char-${Date.now()}`;
   const charWithId = { ...characterData, id: charId };
 
-  const roomRef = doc(db, COLLECTION_NAME, cleanCode);
-  const snap = await getDoc(roomRef);
+  try {
+    const roomRef = doc(db, COLLECTION_NAME, cleanCode);
+    const snap = await withTimeout(
+      getDoc(roomRef),
+      7000,
+      'No se pudo conectar con Firestore para guardar.'
+    );
 
-  let existingCharacters = {};
-  if (snap.exists()) {
-    const data = snap.data();
-    if (data.characters) {
-      existingCharacters = { ...data.characters };
-    } else if (data.character) {
-      existingCharacters[data.character.id || 'char-default'] = data.character;
+    let existingCharacters = {};
+    if (snap && snap.exists()) {
+      const data = snap.data();
+      if (data.characters) {
+        existingCharacters = { ...data.characters };
+      } else if (data.character) {
+        existingCharacters[data.character.id || 'char-default'] = data.character;
+      }
     }
+
+    existingCharacters[charId] = charWithId;
+
+    const payload = {
+      roomCode: cleanCode,
+      updatedAt: serverTimestamp(),
+      characters: existingCharacters,
+      character: charWithId, // Compatibilidad hacia atrás
+      version: '2.0.0'
+    };
+
+    await withTimeout(
+      setDoc(roomRef, payload, { merge: true }),
+      7000,
+      'No se pudo guardar la sala en Firestore.'
+    );
+    return cleanCode;
+  } catch (err) {
+    if (err.code === 'permission-denied' || err.message?.includes('permission-denied') || err.message?.includes('Missing or insufficient permissions')) {
+      throw new Error('Permiso denegado en Firebase Firestore. Ve a tu consola de Firebase > Firestore Database > pestaña "Reglas" (Rules) y pon: allow read, write: if true;');
+    }
+    throw err;
   }
-
-  existingCharacters[charId] = charWithId;
-
-  const payload = {
-    roomCode: cleanCode,
-    updatedAt: serverTimestamp(),
-    characters: existingCharacters,
-    character: charWithId, // Compatibilidad hacia atrás
-    version: '2.0.0'
-  };
-
-  await setDoc(roomRef, payload, { merge: true });
-  return cleanCode;
 };
 
 /**
@@ -73,7 +108,7 @@ export const saveRoomToCloud = async (roomCode, characterData) => {
 export const loadRoomFromCloud = async (roomCode) => {
   const db = getFirebaseDb();
   if (!db) {
-    throw new Error('Firebase no está configurado. Por favor, añade la configuración de Firebase.');
+    throw new Error('Firebase no está configurado. Ve a "☁️ Nube / Sala" > "⚙️ Configurar" y añade tu configuración de Firebase.');
   }
 
   const cleanCode = normalizeRoomCode(roomCode);
@@ -81,27 +116,38 @@ export const loadRoomFromCloud = async (roomCode) => {
     throw new Error('Código de sala no válido.');
   }
 
-  const roomRef = doc(db, COLLECTION_NAME, cleanCode);
-  const snap = await getDoc(roomRef);
+  try {
+    const roomRef = doc(db, COLLECTION_NAME, cleanCode);
+    const snap = await withTimeout(
+      getDoc(roomRef),
+      7000,
+      `No se pudo conectar con la base de datos para buscar la sala "${cleanCode}".`
+    );
 
-  if (!snap.exists()) {
-    throw new Error(`No se encontró ninguna sala de campaña con el código "${cleanCode}".`);
+    if (!snap || !snap.exists()) {
+      throw new Error(`No se encontró ninguna sala de campaña con el código "${cleanCode}". Verifica que el código sea correcto o créala primero.`);
+    }
+
+    const data = snap.data();
+    let charactersList = [];
+
+    if (data.characters && Object.keys(data.characters).length > 0) {
+      charactersList = Object.values(data.characters);
+    } else if (data.character) {
+      charactersList = [data.character];
+    }
+
+    return {
+      roomCode: cleanCode,
+      characters: charactersList,
+      primaryCharacter: charactersList[0] || null
+    };
+  } catch (err) {
+    if (err.code === 'permission-denied' || err.message?.includes('permission-denied') || err.message?.includes('Missing or insufficient permissions')) {
+      throw new Error('Permiso denegado en Firebase. Ve a tu consola de Firebase > Firestore Database > pestaña "Reglas" (Rules) y cambia las reglas a: allow read, write: if true;');
+    }
+    throw err;
   }
-
-  const data = snap.data();
-  let charactersList = [];
-
-  if (data.characters && Object.keys(data.characters).length > 0) {
-    charactersList = Object.values(data.characters);
-  } else if (data.character) {
-    charactersList = [data.character];
-  }
-
-  return {
-    roomCode: cleanCode,
-    characters: charactersList,
-    primaryCharacter: charactersList[0] || null
-  };
 };
 
 /**
